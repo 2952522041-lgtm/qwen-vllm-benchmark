@@ -5,8 +5,8 @@
 ## 运行环境与模型
 
 - Linux 或可使用 NVIDIA GPU 的 WSL2 Ubuntu，Python 3.12、C 编译器及 Python 开发头文件、`uv`、`curl`、`ss`。运行前用 `nvidia-smi` 确认 GPU 0 可见。
-- 浮点模型为 [Qwen3-4B](https://huggingface.co/Qwen/Qwen3-4B)，量化模型为[同一模型的官方 AWQ 4-bit 版本](https://huggingface.co/Qwen/Qwen3-4B-AWQ)。模型修订号固定在 `serve.sh`。FP16 指推理时的权重与计算精度。
-- 三组共用 67% 的显存预算、512 token 上下文、2048 token 的单轮调度预算、Triton attention 与 eager 模式。关闭前缀缓存，避免重复提示词命中缓存。基线允许每轮最多调度 4 条序列，调参组提高到 16，量化组保持 16。两组 FP16 允许卸载 3.75 GiB 权重到 CPU；AWQ 权重全部放在 GPU。量化组和调参组之间的差异同时包含权重精度、算子和权重传输的变化。vLLM 从权重配置识别量化格式。
+- 基线和调参使用官方 [Qwen3-4B-FP8](https://huggingface.co/Qwen/Qwen3-4B-FP8)，再切换至同系列的官方 [Qwen3-4B-AWQ](https://huggingface.co/Qwen/Qwen3-4B-AWQ)。模型修订号固定在 `serve.sh`。原版 16-bit 权重文件约 8.04 GB，这里选用能完整放入笔记本显卡的两个版本。
+- 三组共用 74% 的显存预算、512 token 上下文、512 token 的单轮调度预算、Triton attention 与 eager 模式。关闭前缀缓存，避免重复提示词命中缓存。基线允许每轮最多调度 4 条序列，调参组提高到 16，量化组保持 16。三组权重均驻留 GPU。FP8 到 AWQ 的差异包含权重格式和对应算子的变化。vLLM 从权重配置识别量化格式。
 
 ## 先聊一句
 
