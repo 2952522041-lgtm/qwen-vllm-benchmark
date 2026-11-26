@@ -33,5 +33,7 @@ for phase in "$@"; do
     python -c 'import json,sys; assert json.load(open(sys.argv[1]))["choices"][0]["message"]["content"].strip()' "$out/$phase-chat.json.tmp"
     mv "$out/$phase-chat.json.tmp" "$out/$phase-chat.json"
     python bench.py "$phase" "$out/$phase.json"
+    grep -oE 'Model loading took [0-9.]+ GiB memory|Available KV cache memory: [0-9.]+ GiB|GPU KV cache size: [0-9,]+ tokens' \
+        "$log" > "$out/$phase-engine.txt"
     stop_server
 done

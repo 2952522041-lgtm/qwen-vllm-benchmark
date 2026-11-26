@@ -26,6 +26,21 @@ def payload(i):
                 stream=True, return_token_ids=True, stream_options=dict(include_usage=True))
 
 
+async def stream_events(response):
+    response.raise_for_status()
+    async for line in response.content:
+        if not line.startswith(b"data: "):
+            continue
+        raw = line[6:].strip()
+        if raw == b"[DONE]":
+            return
+        event = json.loads(raw)
+        if event.get("error"):
+            raise ValueError(event["error"])
+        yield event
+    raise ValueError("incomplete SSE stream")
+
+
 async def metrics(session):
     async with session.get("/metrics") as response:
         response.raise_for_status()
@@ -46,9 +61,9 @@ async def settled(session, before, n):
     raise RuntimeError("server metrics do not match the number of completed requests")
 
 
-async def run_group(chat, session, gpu, concurrency):
+async def run_group(batch, session, gpu, concurrency):
     before = await metrics(session)
-    await asyncio.gather(*(chat(session, i) for i in range(concurrency)))
+    await batch(session, concurrency, concurrency)
     before = await settled(session, before, concurrency)
     samples = []
     start = perf_counter()
@@ -62,14 +77,9 @@ async def run_group(chat, session, gpu, concurrency):
             sample()
             await asyncio.sleep(0.2)
 
-    ids = iter(range(REQUESTS))
-
-    async def worker():
-        return [await chat(session, i) for i in ids]
-
     monitor_task = asyncio.create_task(monitor())
     try:
-        batches = await asyncio.gather(*(worker() for _ in range(concurrency)))
+        batches = await batch(session, concurrency, REQUESTS)
         duration = perf_counter() - start
         sample()
     finally:
@@ -85,7 +95,7 @@ async def run_group(chat, session, gpu, concurrency):
                 vram_samples_s_mib=samples, server_means=stages)
 
 
-async def run(chat):
+async def run(batch, levels):
     phase, destination = sys.argv[1:]
     if phase not in ("baseline", "tuned", "awq"):
         raise ValueError("unknown phase")
@@ -98,8 +108,8 @@ async def run(chat):
                     vllm=version("vllm"), torch=version("torch"), groups=[])
         url = "http://127.0.0.1:" + os.getenv("PORT", "8017")
         async with aiohttp.ClientSession(url, timeout=aiohttp.ClientTimeout(total=120)) as session:
-            for concurrency in (1, 4, 16):
-                result = await run_group(chat, session, gpu, concurrency)
+            for concurrency in levels:
+                result = await run_group(batch, session, gpu, concurrency)
                 data["groups"].append(result)
                 print(f"{phase} concurrency={concurrency} completed {REQUESTS} requests", flush=True)
     finally:
