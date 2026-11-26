@@ -5,8 +5,8 @@
 ## 运行环境与模型
 
 - Linux 或可使用 NVIDIA GPU 的 WSL2 Ubuntu，Python 3.12、C 编译器及 Python 开发头文件、`uv`、`curl`、`ss`。运行前用 `nvidia-smi` 确认 GPU 0 可见。
-- 浮点模型为 [Qwen2.5-0.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct)，量化模型为[同一模型的官方 AWQ 4-bit 版本](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-AWQ)。模型修订号固定在 `serve.sh`。FP16 指推理时的权重与计算精度。
-- 三组共用 55% 的显存预算、512 token 上下文、2048 token 的单轮调度预算、Triton attention 与 eager 模式。关闭前缀缓存，避免重复提示词命中缓存。基线允许每轮最多调度 4 条序列，调参组提高到 16，量化组保持 16。vLLM 从权重配置识别量化格式。
+- 浮点模型为 [Qwen3-4B](https://huggingface.co/Qwen/Qwen3-4B)，量化模型为[同一模型的官方 AWQ 4-bit 版本](https://huggingface.co/Qwen/Qwen3-4B-AWQ)。模型修订号固定在 `serve.sh`。FP16 指推理时的权重与计算精度。
+- 三组共用 67% 的显存预算、512 token 上下文、2048 token 的单轮调度预算、Triton attention 与 eager 模式。关闭前缀缓存，避免重复提示词命中缓存。基线允许每轮最多调度 4 条序列，调参组提高到 16，量化组保持 16。两组 FP16 允许卸载 3.75 GiB 权重到 CPU；AWQ 权重全部放在 GPU。量化组和调参组之间的差异同时包含权重精度、算子和权重传输的变化。vLLM 从权重配置识别量化格式。
 
 ## 先聊一句
 
@@ -24,7 +24,7 @@ bash serve.sh baseline
 ```bash
 curl -sS http://127.0.0.1:8017/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model":"qwen-lab","messages":[{"role":"user","content":"用一句中文解释什么是首 token 延迟。"}],"temperature":0,"max_tokens":80}'
+  -d '{"model":"qwen-lab","messages":[{"role":"user","content":"用一句中文解释什么是首 token 延迟。"}],"temperature":0,"max_tokens":80,"chat_template_kwargs":{"enable_thinking":false}}'
 ```
 
 ## 复现实验
@@ -40,10 +40,10 @@ python report.py .local/results
 
 ## 读数口径
 
-- 每个配置、每档并发先预热一轮，再发送相同的 48 条短提示。每个请求固定生成 64 个 token，温度为 0。一个请求结束即补下一个，直到 48 条发完。每档共生成 3,072 个 token。预热、读取监控指标和模型加载耗时均在计时窗口外。
-- 流式客户端以 vLLM 返回的生成 token ID 标记首尾事件，跳过仅携带角色或 usage 的块。TTFT 从客户端发请求计到第一个生成 token 的到达时刻，包含网络和服务端排队。每个请求的 TPOT 等于首末生成 token 的到达时间差除以 63。表中 P95 取最近秩。
+- 每个配置、每档并发先预热一轮，再发送相同的 32 条短提示。每个请求固定生成 32 个 token，温度为 0，关闭 Qwen3 思考模式。一个请求结束即补下一个，直到 32 条发完。每档共生成 1,024 个 token。预热、读取监控指标和模型加载耗时均在计时窗口外。
+- 流式客户端以 vLLM 返回的生成 token ID 标记首尾事件，跳过仅携带角色或 usage 的块。TTFT 从客户端发请求计到第一个生成 token 的到达时刻，包含网络和服务端排队。每个请求的 TPOT 等于首末生成 token 的到达时间差除以 31。表中 P95 取最近秩。
 - 输出吞吐为成功生成的 token 总数除以整批墙钟时间。显存用 NVML 每 200 ms 采样并在批次结束时补采，表中为整张卡已用显存的采样峰值。桌面进程和 vLLM 预留的 KV cache 都占用这一读数。
-- 服务端平均排队、prefill 和 decode 时间来自 `/metrics` 中各阶段 histogram 的前后差值。脚本校验每阶段计数增量为 48。原始 JSON 保留逐请求读数、显存时间序列、阶段均值和批次耗时。 [vLLM 指标定义](https://docs.vllm.ai/en/v0.11.2/design/metrics/)
+- 服务端平均排队、prefill 和 decode 时间来自 `/metrics` 中各阶段 histogram 的前后差值。脚本校验每阶段计数增量为 32。原始 JSON 保留逐请求读数、显存时间序列、阶段均值和批次耗时。 [vLLM 指标定义](https://docs.vllm.ai/en/v0.11.2/design/metrics/)
 
 ## 实测结果
 

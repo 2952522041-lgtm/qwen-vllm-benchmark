@@ -2,7 +2,7 @@ import asyncio
 import json
 from time import perf_counter
 
-from experiment import payload, run
+from experiment import OUTPUT_TOKENS, payload, run
 
 
 async def chat(session, i):
@@ -25,10 +25,10 @@ async def chat(session, i):
                 first = last if first is None else first
         else:
             raise ValueError("incomplete SSE stream")
-    if first is None or not usage or usage["completion_tokens"] != 64:
+    if first is None or not usage or usage["completion_tokens"] != OUTPUT_TOKENS:
         raise ValueError("missing token event or unexpected token count")
     return dict(id=i, prompt_tokens=usage["prompt_tokens"], output_tokens=usage["completion_tokens"],
-                ttft_ms=(first - start) * 1000, tpot_ms=(last - first) * 1000 / 63)
+                ttft_ms=(first - start) * 1000, tpot_ms=(last - first) * 1000 / (OUTPUT_TOKENS - 1))
 
 
 if __name__ == "__main__":

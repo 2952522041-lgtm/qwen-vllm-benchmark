@@ -12,7 +12,8 @@ import aiohttp
 import pynvml as nv
 from prometheus_client.parser import text_string_to_metric_families
 
-REQUESTS = 48
+REQUESTS = 32
+OUTPUT_TOKENS = 32
 STAGES = ("queue", "prefill", "decode")
 
 
@@ -20,7 +21,8 @@ def payload(i):
     text = (f"Request {i:04d}. Explain how an inference server handles multiple "
             "users. Write a detailed answer in English using complete sentences.")
     return dict(model="qwen-lab", messages=[dict(role="user", content=text)],
-                temperature=0, max_tokens=64, min_tokens=64, ignore_eos=True,
+                temperature=0, max_tokens=OUTPUT_TOKENS, min_tokens=OUTPUT_TOKENS, ignore_eos=True,
+                chat_template_kwargs=dict(enable_thinking=False),
                 stream=True, return_token_ids=True, stream_options=dict(include_usage=True))
 
 
